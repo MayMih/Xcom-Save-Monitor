@@ -30,7 +30,7 @@ namespace Xcom2SaveMonitor
     /// </remarks>
     internal class Program
     {
-        private const string TelegramBotToken = "8559262822:AAGh8tYuUq0ec6eMM7BcB5OMUvVzZLvzAMY";
+        private static string TelegramBotToken = "";
         private static readonly string DefaultDirectory = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
             @"My Games\XCOM2 War of the Chosen\XComGame\SaveData"
@@ -39,7 +39,7 @@ namespace Xcom2SaveMonitor
 
         private static readonly HashSet<long> KnownChats = new HashSet<long>();
 
-        private static readonly BotCommand[] SuportedCommands =
+        private static readonly BotCommand[] SupportedCommands =
         {
             new BotCommand { Command = "start", Description = "Начать диалог с ботом" },
             new BotCommand { Command = "size", Description = "Показать последний файл сохранений" },
@@ -61,40 +61,54 @@ namespace Xcom2SaveMonitor
         /// •	Когда создаётся новый файл, срабатывает событие watcher.Created.
         /// •	В обработчике этого события программа:
         /// •	Делает небольшую паузу (await Task.Delay(300)). Это сделано на случай, если файл ещё не полностью записан на диск.
-        /// •	Добавляет информацию о новом файле в потокобезопасную очередь LastFiles.Очередь хранит не более 3 последних файлов.
         /// •	Формирует сообщение с именем и размером файла (для удобного отображения размера используется библиотека ByteSizeLib).
         /// •	Отправляет это сообщение всем пользователям, которые когда-либо писали боту.
         /// </summary>
         /// <param name="args"></param>
         /// <returns></returns>
-        static async Task Main(string[] args)
+        public static async Task Main(string[] args)
         {
-            _directoryToMonitor = args.Length > 0 ? args[0] : DefaultDirectory;
-            if (!Directory.Exists(_directoryToMonitor))
+            try
             {
-                Console.WriteLine("Каталог не найден: " + _directoryToMonitor);
-                return;
+                _directoryToMonitor = args.Length > 0 ? args[0] : DefaultDirectory;
+                if (!Directory.Exists(_directoryToMonitor))
+                {
+                    Console.WriteLine("Каталог не найден: " + _directoryToMonitor);
+                    return;
+                }
+                // считывание Телеграм-ключа
+                try
+                {
+                    TelegramBotToken = File.ReadAllText("bot.key").Trim();
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine("Ошибка чтения файла bot.key: " + ex.Message);
+                    return;
+                }
+
+                _botClient = new TelegramBotClient(TelegramBotToken);
+
+                var cts = new CancellationTokenSource();
+
+                await SetBotCommandsAsync(_botClient, cts.Token, SupportedCommands);
+
+                // Запуск получения апдейтов через UpdateHandler
+                _botClient.StartReceiving(
+                    updateHandler: new UpdateHandler(_botClient),
+                    receiverOptions: new ReceiverOptions { AllowedUpdates = Array.Empty<UpdateType>() },
+                    cancellationToken: cts.Token
+                );
+
+                StartDirectoryMonitor(_botClient, _directoryToMonitor);
+
+                Console.WriteLine("Запущен мониторинг каталога: " + _directoryToMonitor);
             }
-
-            _botClient = new TelegramBotClient(TelegramBotToken);
-
-            var cts = new CancellationTokenSource();
-
-            await SetBotCommandsAsync(_botClient, cts.Token, SuportedCommands);
-
-            // Запуск получения апдейтов через UpdateHandler
-            _botClient.StartReceiving(
-                updateHandler: new UpdateHandler(_botClient),
-                receiverOptions: new ReceiverOptions { AllowedUpdates = Array.Empty<UpdateType>() },
-                cancellationToken: cts.Token
-            );
-
-            Console.WriteLine("Запущен мониторинг каталога: " + _directoryToMonitor);
-
-            StartDirectoryMonitor(_botClient, _directoryToMonitor);
-
-            Console.WriteLine("Для завершения работы нажмите Ctrl+C.");
-            await Task.Delay(Timeout.Infinite);
+            finally
+            {
+                Console.WriteLine("Для завершения работы нажмите Ctrl+C.");
+                await Task.Delay(Timeout.Infinite);
+            }
         }
 
 
@@ -188,7 +202,7 @@ namespace Xcom2SaveMonitor
             // Поэтому приводим botClient к TelegramBotClient, если это возможно.
             if (botClient is TelegramBotClient concreteClient)
             {
-                return botClient.SetMyCommands(SuportedCommands, cancellationToken: cancellationToken);
+                return botClient.SetMyCommands(SupportedCommands, cancellationToken: cancellationToken);
             }
             // Если приведение невозможно, возвращаем завершённую задачу.
             return Task.CompletedTask;
@@ -228,7 +242,7 @@ namespace Xcom2SaveMonitor
                             if (entity.Type == MessageEntityType.BotCommand)
                             {
                                 var command = text.Substring(entity.Offset, entity.Length).TrimStart('/');
-                                foundCommand = SuportedCommands.FirstOrDefault(x =>
+                                foundCommand = SupportedCommands.FirstOrDefault(x =>
                                     x.Command.Equals(command, StringComparison.InvariantCultureIgnoreCase));
                                 if (foundCommand != default)
                                 {
