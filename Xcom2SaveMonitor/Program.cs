@@ -197,7 +197,7 @@ namespace Xcom2SaveMonitor
             {
                 return Task.FromException(new NullReferenceException($"Параметр {nameof(commands)} НЕ может быть пустым!"));
             }
-            // Используем SuportedCommands вместо несуществующего AppCommands
+            // Используем SupportedCommands вместо несуществующего AppCommands
             // Метод SetMyCommandsAsync доступен у TelegramBotClient, а не у интерфейса ITelegramBotClient.
             // Поэтому приводим botClient к TelegramBotClient, если это возможно.
             if (botClient is TelegramBotClient concreteClient)
@@ -210,7 +210,9 @@ namespace Xcom2SaveMonitor
 
 
 
-        // Реализация обработчика апдейтов через интерфейс IUpdateHandler
+        /// <summary>
+        /// Класс-Реализация обработчика апдейтов через интерфейс IUpdateHandler 
+        /// </summary>
         public class UpdateHandler : IUpdateHandler
         {
             private readonly ITelegramBotClient botClient;
@@ -257,7 +259,6 @@ namespace Xcom2SaveMonitor
                     {
                         isSizeCommand = true;
                     }
-
                     if (isSizeCommand)
                     {
                         var cmd = foundCommand?.Command ?? text;
@@ -283,7 +284,7 @@ namespace Xcom2SaveMonitor
                             {
                                 sb.AppendLine($"{++i}. <i>\"{x.Name}\"</i>\n" +
                                     $"Размер: <b>{ByteSize.FromBytes(x.Length)}</b>\n" +
-                                    $"<code>Дата создания {x.CreationTime}</code>\n");
+                                    $"Дата создания: <code>{x.CreationTime}</code>\n");
                             }
                             return botClient.SendMessage(
                                 chatId: chatId,
